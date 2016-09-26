@@ -259,7 +259,7 @@ define(function(require) {
             }
         },
 
-        buildPath: function (ctx, shape) {
+        buildPath: function (ctx, shape, inBundle) {
             var symbolType = shape.symbolType;
             var proxySymbol = symbolBuildProxies[symbolType];
             if (shape.symbolType !== 'none') {
@@ -271,7 +271,7 @@ define(function(require) {
                 symbolShapeMakers[symbolType](
                     shape.x, shape.y, shape.width, shape.height, proxySymbol.shape
                 );
-                proxySymbol.buildPath(ctx, proxySymbol.shape);
+                proxySymbol.buildPath(ctx, proxySymbol.shape, inBundle);
             }
         }
     });
@@ -293,7 +293,7 @@ define(function(require) {
                 symbolStyle.fill && (symbolStyle.fill = color);
                 symbolStyle.stroke && (symbolStyle.stroke = color);
             }
-            this.dirty();
+            this.dirty(false);
         }
     };
 

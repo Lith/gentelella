@@ -136,6 +136,8 @@ define(function (require) {
                 newCptTypes, ComponentModel.getAllClassMainTypes(), visitComponent, this
             );
 
+            this._seriesIndices = this._seriesIndices || [];
+
             function visitComponent(mainType, dependencies) {
                 var newCptOptionList = modelUtil.normalizeToArray(newOption[mainType]);
 
@@ -166,7 +168,7 @@ define(function (require) {
                     // ComponentModel.getAllClassMainTypes.
                     if (!newCptOption) {
                         componentModel.mergeOption({}, this);
-                        componentModel.optionUpdated(this);
+                        componentModel.optionUpdated({}, false);
                     }
                     else {
                         var ComponentModelClass = ComponentModel.getClass(
@@ -175,22 +177,26 @@ define(function (require) {
 
                         if (componentModel && componentModel instanceof ComponentModelClass) {
                             componentModel.mergeOption(newCptOption, this);
-                            componentModel.optionUpdated(this);
+                            componentModel.optionUpdated(newCptOption, false);
                         }
                         else {
                             // PENDING Global as parent ?
-                            componentModel = new ComponentModelClass(
-                                newCptOption, this, this,
-                                zrUtil.extend(
-                                    {
-                                        dependentModels: dependentModels,
-                                        componentIndex: index
-                                    },
-                                    resultItem.keyInfo
-                                )
+                            var extraOpt = zrUtil.extend(
+                                {
+                                    dependentModels: dependentModels,
+                                    componentIndex: index
+                                },
+                                resultItem.keyInfo
                             );
-                            // Call optionUpdated after init
-                            componentModel.optionUpdated(this);
+                            componentModel = new ComponentModelClass(
+                                newCptOption, this, this, extraOpt
+                            );
+                            componentModel.init(newCptOption, this, this, extraOpt);
+                            // Call optionUpdated after init.
+                            // newCptOption has been used as componentModel.option
+                            // and may be merged with theme and default, so pass null
+                            // to avoid confusion.
+                            componentModel.optionUpdated(null, true);
                         }
                     }
 
@@ -300,6 +306,10 @@ define(function (require) {
                     return (isNameArray && indexOf(name, cpt.name) >= 0)
                         || (!isNameArray && cpt.name === name);
                 });
+            }
+            else {
+                // Return all components with mainType
+                result = cpts;
             }
 
             return filterBySubType(result, condition);
@@ -743,10 +753,14 @@ define(function (require) {
     function assertSeriesInitialized(ecModel) {
         // Components that use _seriesIndices should depends on series component,
         // which make sure that their initialization is after series.
-        if (!ecModel._seriesIndices) {
-            throw new Error('Series has not been initialized yet.');
+        if (__DEV__) {
+            if (!ecModel._seriesIndices) {
+                throw new Error('Series has not been initialized yet.');
+            }
         }
     }
+
+    zrUtil.mixin(GlobalModel, require('./mixin/colorPalette'));
 
     return GlobalModel;
 });

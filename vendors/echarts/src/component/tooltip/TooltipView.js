@@ -7,6 +7,7 @@ define(function (require) {
     var numberUtil = require('../../util/number');
     var parsePercent = numberUtil.parsePercent;
     var env = require('zrender/core/env');
+    var Model = require('../../model/Model');
 
     function dataEqual(a, b) {
         if (!a || !b) {
@@ -156,7 +157,7 @@ define(function (require) {
         var trigger = seriesModel.get('tooltip.trigger', true);
         // Ignore series use item tooltip trigger and series coordinate system is not cartesian or
         return !(!coordSys
-            || (coordSys.type !== 'cartesian2d' && coordSys.type !== 'polar' && coordSys.type !== 'single')
+            || (coordSys.type !== 'cartesian2d' && coordSys.type !== 'polar' && coordSys.type !== 'singleAxis')
             || trigger === 'item');
     }
 
@@ -387,7 +388,7 @@ define(function (require) {
                         baseAxis = coordSys.getBaseAxis();
                         key = baseAxis.dim + baseAxis.index;
                     }
-                    else if (coordSys.type === 'single') {
+                    else if (coordSys.type === 'singleAxis') {
                         baseAxis = coordSys.getAxis();
                         key = baseAxis.dim + baseAxis.type;
                     }
@@ -457,6 +458,26 @@ define(function (require) {
                     dataIndex: el.dataIndex,
                     seriesIndex: el.seriesIndex
                 });
+            }
+            // Tooltip provided directly. Like legend
+            else if (el && el.tooltip) {
+                var tooltipOpt = el.tooltip;
+                if (typeof tooltipOpt === 'string') {
+                    var content = tooltipOpt;
+                    tooltipOpt = {
+                        content: content,
+                        // Fixed formatter
+                        formatter: content
+                    };
+                }
+                var subTooltipModel = new Model(tooltipOpt, tooltipModel);
+                var defaultHtml = subTooltipModel.get('content');
+                var asyncTicket = Math.random();
+                this._showTooltipContent(
+                    // TODO params
+                    subTooltipModel, defaultHtml, subTooltipModel.get('formatterParams') || {},
+                    asyncTicket, e.offsetX, e.offsetY, el, api
+                );
             }
             else {
                 if (globalTrigger === 'item') {
@@ -557,7 +578,7 @@ define(function (require) {
                         axisPointerModel, coordSys, axisType, point
                     );
                 }
-                else if (coordSys.type === 'single' && !contentNotChange) {
+                else if (coordSys.type === 'singleAxis' && !contentNotChange) {
                     this._showSinglePointer(
                         axisPointerModel, coordSys, axisType, point
                     );
@@ -591,7 +612,10 @@ define(function (require) {
             var self = this;
 
             var axisPointerType = axisPointerModel.get('type');
-            var moveAnimation = axisPointerType !== 'cross';
+            var baseAxis = cartesian.getBaseAxis();
+            var moveAnimation = axisPointerType !== 'cross'
+                && baseAxis.type === 'category'
+                && baseAxis.getBandWidth() > 20;
 
             if (axisPointerType === 'cross') {
                 moveGridLine('x', point, cartesian.getAxis('y').getGlobalExtent());
@@ -621,6 +645,11 @@ define(function (require) {
                 var pointerEl = self._getPointerElement(
                     cartesian, axisPointerModel, axisType, targetShape
                 );
+                graphic.subPixelOptimizeLine({
+                    shape: targetShape,
+                    style: pointerEl.style
+                });
+
                 moveAnimation
                     ? graphic.updateProps(pointerEl, {
                         shape: targetShape
@@ -657,7 +686,7 @@ define(function (require) {
         _showSinglePointer: function (axisPointerModel, single, axisType, point) {
             var self = this;
             var axisPointerType = axisPointerModel.get('type');
-            var moveAnimation = axisPointerType !== 'cross';
+            var moveAnimation = axisPointerType !== 'cross' && single.getBaseAxis().type === 'category';
             var rect = single.getRect();
             var otherExtent = [rect.y, rect.y + rect.height];
 
@@ -703,7 +732,8 @@ define(function (require) {
             var angleAxis = polar.getAngleAxis();
             var radiusAxis = polar.getRadiusAxis();
 
-            var moveAnimation = axisPointerType !== 'cross';
+            var moveAnimation = axisPointerType !== 'cross'
+                && polar.getBaseAxis().type === 'category';
 
             if (axisPointerType === 'cross') {
                 movePolarLine('angle', point, radiusAxis.getExtent());
@@ -889,9 +919,9 @@ define(function (require) {
         ) {
 
             var rootTooltipModel = this._tooltipModel;
-            var tooltipContent = this._tooltipContent;
 
             var baseAxis = coordSys.getBaseAxis();
+            var baseDimIndex = baseAxis.dim === 'x' || baseAxis.dim === 'radius' ? 0 : 1;
 
             var payloadBatch = zrUtil.map(seriesList, function (series) {
                 return {
@@ -900,7 +930,9 @@ define(function (require) {
                         ? series.getAxisTooltipDataIndex(series.coordDimToDataDim(baseAxis.dim), value, baseAxis)
                         : series.getData().indexOfNearest(
                             series.coordDimToDataDim(baseAxis.dim)[0],
-                            value[baseAxis.dim === 'x' || baseAxis.dim === 'radius' ? 0 : 1]
+                            value[baseDimIndex],
+                            // Add a threshold to avoid find the wrong dataIndex when data length is not same
+                            false, baseAxis.type === 'category' ? 0.5 : null
                         )
                 };
             });
@@ -931,67 +963,39 @@ define(function (require) {
             });
 
             if (baseAxis && rootTooltipModel.get('showContent') && rootTooltipModel.get('show')) {
-
-                var formatter = rootTooltipModel.get('formatter');
-                var positionExpr = rootTooltipModel.get('position');
-                var html;
-
                 var paramsList = zrUtil.map(seriesList, function (series, index) {
                     return series.getDataParams(payloadBatch[index].dataIndex);
                 });
-                // If only one series
-                // FIXME
-                // if (paramsList.length === 1) {
-                //     paramsList = paramsList[0];
-                // }
 
-                tooltipContent.show(rootTooltipModel);
-
-                // Update html content
-                var firstDataIndex = payloadBatch[0].dataIndex;
                 if (!contentNotChange) {
-                    // Reset ticket
-                    this._ticket = '';
-                    if (!formatter) {
-                        // Default tooltip content
-                        // FIXME
-                        // (1) shold be the first data which has name?
-                        // (2) themeRiver, firstDataIndex is array, and first line is unnecessary.
-                        var firstLine = seriesList[0].getData().getName(firstDataIndex);
-                        html = (firstLine ? firstLine + '<br />' : '')
-                            + zrUtil.map(seriesList, function (series, index) {
-                                return series.formatTooltip(payloadBatch[index].dataIndex, true);
-                            }).join('<br />');
-                    }
-                    else {
-                        if (typeof formatter === 'string') {
-                            html = formatUtil.formatTpl(formatter, paramsList);
-                        }
-                        else if (typeof formatter === 'function') {
-                            var self = this;
-                            var ticket = 'axis_' + coordSys.name + '_' + firstDataIndex;
-                            var callback = function (cbTicket, html) {
-                                if (cbTicket === self._ticket) {
-                                    tooltipContent.setContent(html);
+                    // Update html content
+                    var firstDataIndex = payloadBatch[0].dataIndex;
 
-                                    updatePosition(
-                                        positionExpr, point[0], point[1],
-                                        tooltipContent, paramsList, null, api
-                                    );
-                                }
-                            };
-                            self._ticket = ticket;
-                            html = formatter(paramsList, ticket, callback);
-                        }
-                    }
+                    // Default tooltip content
+                    // FIXME
+                    // (1) shold be the first data which has name?
+                    // (2) themeRiver, firstDataIndex is array, and first line is unnecessary.
+                    var firstLine = baseAxis.type === 'time'
+                        ? baseAxis.scale.getLabel(value[baseDimIndex])
+                        : seriesList[0].getData().getName(firstDataIndex);
+                    var defaultHtml = (firstLine ? firstLine + '<br />' : '')
+                        + zrUtil.map(seriesList, function (series, index) {
+                            return series.formatTooltip(payloadBatch[index].dataIndex, true);
+                        }).join('<br />');
 
-                    tooltipContent.setContent(html);
+                    var asyncTicket = 'axis_' + coordSys.name + '_' + firstDataIndex;
+
+                    this._showTooltipContent(
+                        rootTooltipModel, defaultHtml, paramsList, asyncTicket,
+                        point[0], point[1], null, api
+                    );
                 }
-
-                updatePosition(
-                    positionExpr, point[0], point[1],
-                    tooltipContent, paramsList, null, api
-                );
+                else {
+                    updatePosition(
+                        rootTooltipModel.get('position'), point[0], point[1],
+                        this._tooltipContent, paramsList, null, api
+                    );
+                }
             }
         },
 
@@ -1008,42 +1012,62 @@ define(function (require) {
             var data = seriesModel.getData(dataType);
             var itemModel = data.getItemModel(dataIndex);
 
+            var tooltipOpt = itemModel.get('tooltip', true);
+            if (typeof tooltipOpt === 'string') {
+                // In each data item tooltip can be simply write:
+                // {
+                //  value: 10,
+                //  tooltip: 'Something you need to know'
+                // }
+                var tooltipContent = tooltipOpt;
+                tooltipOpt = {
+                    formatter: tooltipContent
+                };
+            }
             var rootTooltipModel = this._tooltipModel;
+            var seriesTooltipModel = seriesModel.getModel(
+                'tooltip', rootTooltipModel
+            );
+            var tooltipModel = new Model(tooltipOpt, seriesTooltipModel, seriesTooltipModel.ecModel);
 
-            var tooltipContent = this._tooltipContent;
+            var params = seriesModel.getDataParams(dataIndex, dataType);
+            var defaultHtml = seriesModel.formatTooltip(dataIndex, false, dataType);
 
-            var tooltipModel = itemModel.getModel('tooltip');
+            var asyncTicket = 'item_' + seriesModel.name + '_' + dataIndex;
 
-            // If series model
-            if (tooltipModel.parentModel) {
-                tooltipModel.parentModel.parentModel = rootTooltipModel;
-            }
-            else {
-                tooltipModel.parentModel = this._tooltipModel;
-            }
+            this._showTooltipContent(
+                tooltipModel, defaultHtml, params, asyncTicket,
+                e.offsetX, e.offsetY, e.target, api
+            );
+        },
+
+        _showTooltipContent: function (
+            tooltipModel, defaultHtml, params, asyncTicket, x, y, target, api
+        ) {
+            // Reset ticket
+            this._ticket = '';
 
             if (tooltipModel.get('showContent') && tooltipModel.get('show')) {
+                var tooltipContent = this._tooltipContent;
+
                 var formatter = tooltipModel.get('formatter');
                 var positionExpr = tooltipModel.get('position');
-                var params = seriesModel.getDataParams(dataIndex, dataType);
-                var html;
-                if (!formatter) {
-                    html = seriesModel.formatTooltip(dataIndex, false, dataType);
-                }
-                else {
+                var html = defaultHtml;
+
+                if (formatter) {
                     if (typeof formatter === 'string') {
                         html = formatUtil.formatTpl(formatter, params);
                     }
                     else if (typeof formatter === 'function') {
                         var self = this;
-                        var ticket = 'item_' + seriesModel.name + '_' + dataIndex;
+                        var ticket = asyncTicket;
                         var callback = function (cbTicket, html) {
                             if (cbTicket === self._ticket) {
                                 tooltipContent.setContent(html);
 
                                 updatePosition(
-                                    positionExpr, e.offsetX, e.offsetY,
-                                    tooltipContent, params, e.target, api
+                                    positionExpr, x, y,
+                                    tooltipContent, params, target, api
                                 );
                             }
                         };
@@ -1056,8 +1080,8 @@ define(function (require) {
                 tooltipContent.setContent(html);
 
                 updatePosition(
-                    positionExpr, e.offsetX, e.offsetY,
-                    tooltipContent, params, e.target, api
+                    positionExpr, x, y,
+                    tooltipContent, params, target, api
                 );
             }
         },
@@ -1104,7 +1128,9 @@ define(function (require) {
                 });
             }
             else {
-                this.group.hide();
+                if (this.group.children().length) {
+                    this.group.hide();
+                }
             }
         },
 

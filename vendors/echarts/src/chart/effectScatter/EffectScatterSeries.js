@@ -16,6 +16,8 @@ define(function (require) {
             return list;
         },
 
+        brushSelector: 'point',
+
         defaultOption: {
             coordinateSystem: 'cartesian2d',
             zlevel: 0,
@@ -37,14 +39,14 @@ define(function (require) {
             },
 
             // Cartesian coordinate system
-            xAxisIndex: 0,
-            yAxisIndex: 0,
+            // xAxisIndex: 0,
+            // yAxisIndex: 0,
 
             // Polar coordinate system
-            polarIndex: 0,
+            // polarIndex: 0,
 
             // Geo coordinate system
-            geoIndex: 0,
+            // geoIndex: 0,
 
             // symbol: null,        // 图形类型
             symbolSize: 10          // 图形大小，半宽（半径）参数，当图形为方向或菱形则总宽度为symbolSize * 2
@@ -60,5 +62,6 @@ define(function (require) {
             //     }
             // }
         }
+
     });
 });

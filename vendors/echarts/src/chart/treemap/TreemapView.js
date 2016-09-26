@@ -133,7 +133,7 @@
                 this._initEvents(containerGroup);
                 this.group.add(containerGroup);
             }
-            containerGroup.position = [layoutInfo.x, layoutInfo.y];
+            containerGroup.attr('position', [layoutInfo.x, layoutInfo.y]);
 
             return containerGroup;
         },
@@ -326,7 +326,7 @@
                     if (storageName === 'nodeGroup') {
                         if (last.old) {
                             target.position = el.position.slice();
-                            el.position = last.old;
+                            el.attr('position', last.old);
                         }
                     }
                     else {
@@ -676,7 +676,7 @@
 
         parentGroup.add(group);
         // x,y are not set when el is above view root.
-        group.position = [thisLayout.x || 0, thisLayout.y || 0];
+        group.attr('position', [thisLayout.x || 0, thisLayout.y || 0]);
         group.__tmNodeWidth = thisWidth;
         group.__tmNodeHeight = thisHeight;
 
@@ -762,7 +762,7 @@
             var text = nodeModel.get('name');
             if (thisLayout.isLeafRoot) {
                 var iconChar = seriesModel.get('drillDownIcon', true);
-                text += iconChar ? '  ' + iconChar : '';
+                text = iconChar ? iconChar + ' ' + text : test;
             }
 
             setText(
@@ -793,7 +793,10 @@
             }
             else if (textRect.width > contentWidth) {
                 style.text = labelTextStyleModel.get('ellipsis')
-                    ? labelTextStyleModel.ellipsis(text, contentWidth) : '';
+                    ? labelTextStyleModel.truncateText(
+                        text, contentWidth, null, {minChar: 2}
+                    )
+                    : '';
             }
             else {
                 style.text = text;

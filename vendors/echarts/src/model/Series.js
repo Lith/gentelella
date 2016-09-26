@@ -6,6 +6,8 @@ define(function(require) {
     var formatUtil = require('../util/format');
     var modelUtil = require('../util/model');
     var ComponentModel = require('./Component');
+    var colorPaletteMixin = require('./mixin/colorPalette');
+    var env = require('zrender/core/env');
 
     var encodeHTML = formatUtil.encodeHTML;
     var addCommas = formatUtil.addCommas;
@@ -34,6 +36,11 @@ define(function(require) {
          */
         // PENDING
         legendDataProvider: null,
+
+        /**
+         * Access path of color for visual
+         */
+        visualColorAccessPath: 'itemStyle.normal.color',
 
         init: function (option, parentModel, ecModel, extraOpt) {
 
@@ -178,10 +185,29 @@ define(function(require) {
          * @param {number} [dataType]
          */
         formatTooltip: function (dataIndex, multipleSeries, dataType) {
+            function formatArrayValue(value) {
+                return zrUtil.map(value, function (val, idx) {
+                    var dimInfo = data.getDimensionInfo(idx);
+                    var dimType = dimInfo && dimInfo.type;
+                    if (dimType === 'ordinal') {
+                        return val;
+                    }
+                    else if (dimType === 'time') {
+                        return multipleSeries ? '' : formatUtil.formatTime('yyyy/mm/dd hh:mm:ss', val);
+                    }
+                    else {
+                        return addCommas(val);
+                    }
+                }).filter(function (val) {
+                    return !!val;
+                }).join(', ');
+            }
+
             var data = this._data;
+
             var value = this.getRawValue(dataIndex);
             var formattedValue = zrUtil.isArray(value)
-                ? zrUtil.map(value, addCommas).join(', ') : addCommas(value);
+                ? formatArrayValue(value) : addCommas(value);
             var name = data.getName(dataIndex);
             var color = data.getItemVisual(dataIndex, 'color');
             var colorEl = '<span style="display:inline-block;margin-right:5px;'
@@ -202,14 +228,42 @@ define(function(require) {
                 : (colorEl + encodeHTML(this.name) + ' : ' + formattedValue);
         },
 
+        /**
+         * @return {boolean}
+         */
+        ifEnableAnimation: function () {
+            if (env.node) {
+                return false;
+            }
+
+            var animationEnabled = this.getShallow('animation');
+            if (animationEnabled) {
+                if (this.getData().count() > this.getShallow('animationThreshold')) {
+                    animationEnabled = false;
+                }
+            }
+            return animationEnabled;
+        },
+
         restoreData: function () {
             this._data = this._dataBeforeProcessed.cloneShallow();
+        },
+
+        getColorFromPalette: function (name, scope) {
+            var ecModel = this.ecModel;
+            // PENDING
+            var color = colorPaletteMixin.getColorFromPalette.call(this, name, scope);
+            if (!color) {
+                color = ecModel.getColorFromPalette(name, scope);
+            }
+            return color;
         },
 
         getAxisTooltipDataIndex: null
     });
 
     zrUtil.mixin(SeriesModel, modelUtil.dataFormatMixin);
+    zrUtil.mixin(SeriesModel, colorPaletteMixin);
 
     return SeriesModel;
 });

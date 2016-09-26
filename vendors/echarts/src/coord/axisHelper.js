@@ -74,6 +74,11 @@ define(function (require) {
         var fixMin = (model.getMin ? model.getMin() : model.get('min')) != null;
         var fixMax = (model.getMax ? model.getMax() : model.get('max')) != null;
         var splitNumber = model.get('splitNumber');
+
+        if (scale.type === 'log') {
+            scale.base = model.get('logBase');
+        }
+
         scale.setExtent(extent[0], extent[1]);
         scale.niceExtent(splitNumber, fixMin, fixMax);
 
@@ -159,15 +164,17 @@ define(function (require) {
         var step = 1;
         if (labels.length > 40) {
             // Simple optimization for large amount of labels
-            step = Math.round(labels.length / 40);
+            step = Math.floor(labels.length / 40);
         }
+
         for (var i = 0; i < tickCoords.length; i += step) {
             var tickCoord = tickCoords[i];
             var rect = textContain.getBoundingRect(
                 labels[i], font, 'center', 'top'
             );
             rect[isAxisHorizontal ? 'x' : 'y'] += tickCoord;
-            rect[isAxisHorizontal ? 'width' : 'height'] *= 1.5;
+            // FIXME Magic number 1.5
+            rect[isAxisHorizontal ? 'width' : 'height'] *= 1.3;
             if (!textSpaceTakenRect) {
                 textSpaceTakenRect = rect.clone();
             }
@@ -185,7 +192,7 @@ define(function (require) {
         if (autoLabelInterval === 0 && step > 1) {
             return step;
         }
-        return autoLabelInterval * step;
+        return (autoLabelInterval + 1) * step - 1;
     };
 
     /**
